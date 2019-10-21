@@ -2,6 +2,7 @@ package com.example.sliderpuzzle;
 
 import androidx.appcompat.app.AppCompatActivity;
 
+import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Point;
 import android.os.Bundle;
@@ -9,9 +10,13 @@ import android.util.Log;
 import android.util.TypedValue;
 import android.view.Display;
 import android.view.Gravity;
+import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowManager;
+import android.widget.Button;
 import android.widget.LinearLayout;
+import android.widget.PopupWindow;
 import android.widget.RelativeLayout;
 import android.widget.TextView;
 
@@ -38,6 +43,8 @@ public class SliderActivity extends AppCompatActivity
     int returnHome;
     int statsDisplay;
 
+    //Variable to keep track of game in progress
+    boolean playing = true;
 
     protected void onCreate(Bundle savedInstanceState)
     {
@@ -80,15 +87,63 @@ public class SliderActivity extends AppCompatActivity
     //Starts a new game.
     void newGame()
     {
+        //Make playing variable true
+        playing = true;
+        boolean solvable = false;
+
         //Initiate game board array
         gameArray = new int[boardSize * boardSize];
         for(int i = 0; i < boardSize * boardSize; i++)
         {
             gameArray[i] = i;
         }
-        shuffleArray(gameArray);
+
+        //Check if shuffled board is solvable. If not, reshuffle.
+        while(!solvable)
+        {
+            shuffleArray(gameArray);
+            solvable = isSolvable(gameArray);
+        }
 
         drawBoard();
+    }
+
+    //Function for determining if generated puzzle is solvable or not
+    boolean isSolvable(int[] gameBoard)
+    {
+        boolean solvable = false;
+        int inversions = 0;
+
+        //When a larger number appears before a smaller number, increase the amount of  inversions.
+        for(int i = 0; i < gameBoard.length - 1; i++)
+        {
+            for(int j = i + 1; j < gameBoard.length; j++)
+            {
+                if(gameBoard[i] != 0 && gameBoard[j] != 0 && gameBoard[i] > gameBoard[j])
+                    inversions++;
+            }
+        }
+
+        //For odd sized boards, puzzle is solvable if even number of inversions
+        //For even sized boards, puzzle is solvable is inversions plus the row of the blank space is odd
+        if(boardSize % 2 == 1)
+        {
+            if (inversions % 2 == 0)
+                solvable = true;
+            else
+                solvable = false;
+        }
+        else if(boardSize % 2 == 0)
+        {
+            int blankLocation = findIndexOf(gameBoard, 0) / boardSize;
+
+            if ((inversions + blankLocation) % 2 == 1)
+                solvable = true;
+            else
+                solvable = false;
+        }
+
+        return solvable;
     }
 
     //Function to draw the game board
@@ -108,7 +163,6 @@ public class SliderActivity extends AppCompatActivity
             {
                 TextView tv = new TextView(this);
                 tv.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-                tv.setBackgroundResource(R.drawable.round_corners);
                 tv.setId(gameArray[i]);
                 tv.setText(String.valueOf(gameArray[i]));
                 tv.setGravity(Gravity.CENTER);
@@ -139,6 +193,7 @@ public class SliderActivity extends AppCompatActivity
         }
     }
 
+    //Draws the upper bar
     void drawHomeBar()
     {
         //Blank textview used for bar background
@@ -188,31 +243,84 @@ public class SliderActivity extends AppCompatActivity
         layout.addView(tvTime);
     }
 
+    //moves a tile and updates board if a possible move is done.
     public void updateMove(View tv)
     {
-        int blankLocation = findIndexOf(gameArray, 0);
-        int clickedLocation = findIndexOf(gameArray, tv.getId());
-        int range = Math.abs(blankLocation - clickedLocation);
-
-        if (range == boardSize || (range == 1 && (Math.abs((blankLocation % boardSize) - (clickedLocation % boardSize))) == 1))
+        if(playing)
         {
-            swap(gameArray, blankLocation, clickedLocation);
-            drawBoard();
-        }
+            int blankLocation = findIndexOf(gameArray, 0);
+            int clickedLocation = findIndexOf(gameArray, tv.getId());
+            int range = Math.abs(blankLocation - clickedLocation);
 
+            if (range == boardSize || (range == 1 && (Math.abs((blankLocation % boardSize) - (clickedLocation % boardSize))) == 1)) {
+                swap(gameArray, blankLocation, clickedLocation);
+                drawBoard();
+            }
+
+            checkGameOver(gameArray);
+        }
     }
 
-
-    //Shuffles the given array
-    void shuffleArray(int[] array)
+    //Check if the game is over. If so, end it and display a message saying the puzzle is solved.
+    void checkGameOver(int[] gameBoard)
     {
-        Random random = new Random();
-        random.nextInt();
-        for (int i = 0; i < array.length; i++)
+        boolean win = true;
+        int check = 0;
+
+        for (int i = 0; i < gameBoard.length; i++)
         {
-            int change = i + random.nextInt(array.length - i);
-            swap(array, i, change);
+            if (i + 1 == gameBoard[i])
+                check += 1;
         }
+
+        //If puzzle is solved
+        if (check == gameBoard.length - 1)
+        {
+            playing = false;
+            displayPopup();
+        }
+    }
+
+    //Popup window once puzzle is solved. Tells user they finished, option to play again or go to main menu.
+    void displayPopup()
+    {
+        LayoutInflater layoutInflater = (LayoutInflater) this.getSystemService(Context.LAYOUT_INFLATER_SERVICE);
+        View popupLayout = layoutInflater.inflate(R.layout.layout_popup, null);
+
+        //Create and configure the popup window
+        final PopupWindow popup = new PopupWindow(this);
+        popup.setContentView(popupLayout);
+        popup.setHeight((int)(screenHeight * 0.35));
+        popup.setWidth((int)(screenWidth * 0.8));
+        popup.setAnimationStyle(R.style.popupAnimation);
+        popup.setOutsideTouchable(false);
+
+        TextView popupText = popupLayout.findViewById(R.id.popupText);
+        popupText.setText("Puzzle solved! Placeholder text. Will show ending stats (Move count and time taken to solve) as well as if the user got a high score or not");
+
+        popup.showAtLocation(popupLayout, Gravity.CENTER, 0, 0);
+
+        //Dims the background
+        final View container = popup.getContentView().getRootView();
+        Context context = popup.getContentView().getContext();
+        WindowManager manager = (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
+        WindowManager.LayoutParams param = (WindowManager.LayoutParams) container.getLayoutParams();
+        param.flags |= WindowManager.LayoutParams.FLAG_DIM_BEHIND;
+        param.dimAmount = 0.7f;
+        manager.updateViewLayout(container, param);
+
+        //Button OnClick listeners
+        Button newGame = popupLayout.findViewById(R.id.popupButtonNewGame);
+        newGame.setOnClickListener(new View.OnClickListener(){
+            public void onClick(View v)
+            {
+                //Dismiss the dimmed background and popup, and start a new game.
+                getWindow().clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+                popup.dismiss();
+                newGame();
+            }
+        });
+
     }
 
     //Helper function to get the index position of given number
@@ -227,11 +335,23 @@ public class SliderActivity extends AppCompatActivity
         return -1;
     }
 
+    //Shuffles the given array.
+    void shuffleArray(int[] array)
+    {
+        Random random = new Random();
+        random.nextInt();
+        for (int i = 0; i < array.length; i++)
+        {
+            int change = i + random.nextInt(array.length - i);
+            swap(array, i, change);
+        }
+    }
+
     //Helper function that swaps two values in an array
     void swap(int[] array, int a, int b)
     {
         int temp = array[a];
-        array[b] = array[b];
+        array[a] = array[b];
         array[b] = temp;
     }
 }
